@@ -29,7 +29,7 @@ curl -fsSL https://omnibuf.com/install.sh | sh
 ### `mise` (macOS, Linux & Windows)
 
 ```bash
-mise use -g ubi:omnibuf/omnibuf-cli[exe=omnibuf]
+mise use -g github:omnibuf/omnibuf-cli
 ```
 
 ### Go Toolchain
