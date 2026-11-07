@@ -1,6 +1,6 @@
 module github.com/omnibuf/omnibuf-cli
 
-go 1.27.1
+go 1.25.0
 
 require (
 	github.com/itchyny/gojq v0.12.20
