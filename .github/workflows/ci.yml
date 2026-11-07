@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Go (Format & Lint)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install tools via mise
+        uses: jdx/mise-action@v5
+        with:
+          install: true
+
+      - name: Check Go formatting
+        run: just fmt-check
+
+      - name: Run golangci-lint
+        run: just lint
+
+  test:
+    name: Go ${{ matrix.go-version }} (Test & Build)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.25", "1.26", "1.27"]
+    env:
+      MISE_GO_VERSION: ${{ matrix.go-version }}
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install tools via mise
+        uses: jdx/mise-action@v5
+        with:
+          install: true
+
+      - name: Run unit tests & build
+        run: |
+          just test
+          just build
