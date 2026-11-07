@@ -14,11 +14,31 @@ A `jq`-style command-line tool for inspecting, querying, encoding, decoding, and
 
 ## Install
 
-Download a prebuilt binary from [GitHub Releases](https://github.com/omnibuf/omnibuf-cli/releases), or install with Go:
+### Homebrew (macOS & Linux)
+
+```bash
+brew install omnibuf/tap/omnibuf
+```
+
+### Shell Script (macOS & Linux)
+
+```bash
+curl -fsSL https://omnibuf.com/install.sh | sh
+```
+
+### `mise` (macOS, Linux & Windows)
+
+```bash
+mise use -g ubi:omnibuf/omnibuf-cli[exe=omnibuf]
+```
+
+### Go Toolchain
 
 ```bash
 go install github.com/omnibuf/omnibuf-cli/cmd/omnibuf@latest
 ```
+
+Prebuilt archives and SHA-256 checksums are also published on [GitHub Releases](https://github.com/omnibuf/omnibuf-cli/releases).
 
 ---
 
