@@ -23,9 +23,5 @@ fmt:
 fmt-check:
     golangci-lint fmt --diff
 
-# Run the built-in conformance suite against a target adapter binary
-conformance adapter: build
-    ./bin/omnibuf conformance {{adapter}}
-
 # Run full CI checks
 ci: fmt-check lint test build

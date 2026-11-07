@@ -14,7 +14,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/omnibuf/omnibuf-cli/internal/conformance"
 	"github.com/omnibuf/omnibuf-go"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -40,8 +39,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return runDecode(args[1:], stdin, stdout, stderr)
 		case "encode", "enc", "e":
 			return runEncode(args[1:], stdin, stdout, stderr)
-		case "conformance", "conf":
-			return runConformance(args[1:], stdout, stderr)
 		case "version", "-v", "--version":
 			_, err := fmt.Fprintf(stdout, "omnibuf %s\n", version)
 			return err
@@ -75,7 +72,6 @@ jq-Style Quick Usage (Auto-Detects OmniBuf vs JSON):
 Commands:
   decode        Decode OmniBuf wire bytes to JSON (blind or schema-aware, with optional jq filter)
   encode        Encode JSON to OmniBuf wire bytes (schema-less with Field #0, or with FileDescriptorSet)
-  conformance   Run the self-contained conformance suite against a client adapter binary
   version       Print the omnibuf CLI version
 
 Flags:
@@ -284,49 +280,6 @@ func runAuto(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 	return writeOutput(outputPath, stdout, jsonOut)
-}
-
-func runConformance(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("conformance", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-
-	var (
-		corpusPath string
-		jsonOutput bool
-	)
-	fs.StringVar(&corpusPath, "corpus", "", "Optional path to override the built-in embedded conformance_corpus.json")
-	fs.BoolVar(&jsonOutput, "json", false, "Emit conformance summary as JSON")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() < 1 {
-		return errors.New("conformance requires a client binary command (usage: omnibuf conformance [flags] <client-binary> [client-args...])")
-	}
-
-	sum, err := conformance.RunSuiteWithOptions(conformance.RunOptions{
-		AdapterBinary: fs.Arg(0),
-		AdapterArgs:   fs.Args()[1:],
-		CorpusPath:    corpusPath,
-	})
-	if err != nil {
-		return err
-	}
-
-	if jsonOutput {
-		enc := json.NewEncoder(stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(sum); err != nil {
-			return fmt.Errorf("encode conformance summary JSON: %w", err)
-		}
-	} else {
-		conformance.FormatSummary(stdout, stderr, sum)
-	}
-
-	if len(sum.Failures) > 0 {
-		return fmt.Errorf("%d conformance test(s) failed", len(sum.Failures))
-	}
-	return nil
 }
 
 func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
