@@ -81,6 +81,11 @@ main() {
   fi
 
   tar -xzf "${tmpdir}/${archive}" -C "${tmpdir}"
+  bin_path="$(find "${tmpdir}" -name "${BIN_NAME}" -type f | head -n 1)"
+  if [ -z "$bin_path" ]; then
+    echo "error: ${BIN_NAME} binary not found in archive ${archive}" >&2
+    exit 1
+  fi
 
   bin_dir="${BIN_DIR:-}"
   if [ -z "$bin_dir" ]; then
@@ -92,7 +97,7 @@ main() {
     fi
   fi
 
-  install -m 0755 "${tmpdir}/${BIN_NAME}" "${bin_dir}/${BIN_NAME}"
+  install -m 0755 "$bin_path" "${bin_dir}/${BIN_NAME}"
   echo "Installed ${BIN_NAME} to ${bin_dir}/${BIN_NAME}"
   case ":${PATH}:" in
     *":${bin_dir}:"*) ;;
