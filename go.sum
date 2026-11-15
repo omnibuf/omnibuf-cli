@@ -24,8 +24,8 @@ github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.2 h1:xBagoLtFs94CBntxluKeaWgTMpvLxC4ur3nMaC9Gz0M=
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
-github.com/omnibuf/omnibuf-go v0.1.0 h1:mO05EWwt11wpQg1xj5T93eXec3cL8+IdCPixPv6/LuI=
-github.com/omnibuf/omnibuf-go v0.1.0/go.mod h1:C6TeXaaRaXYTqHFlOw+rSPfgWB0m/8UacPWKcEViYQY=
+github.com/omnibuf/omnibuf-go v0.1.1 h1:GwNwC5OtMsm/Bkhjk2+XDFPA5dNK3Bxh9Io289JF5YU=
+github.com/omnibuf/omnibuf-go v0.1.1/go.mod h1:C6TeXaaRaXYTqHFlOw+rSPfgWB0m/8UacPWKcEViYQY=
 github.com/planetscale/vtprotobuf v0.6.0 h1:nBeETjudeJ5ZgBHUz1fVHvbqUKnYOXNhsIEabROxmNA=
 github.com/planetscale/vtprotobuf v0.6.0/go.mod h1:t/avpk3KcrXxUnYOhZhMXJlSEyie6gQbtLq5NM3loB8=
 github.com/vmihailenco/msgpack/v5 v5.4.1 h1:cQriyiUvjTwOHg8QZaPihLWeRAAVoCpE00IUPn0Bjt8=
