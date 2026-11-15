@@ -1,9 +1,10 @@
 # OmniBuf CLI (`omnibuf`)
 
 [![CI](https://github.com/omnibuf/omnibuf-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/omnibuf/omnibuf-cli/actions/workflows/ci.yml)
+[![Wire Spec: v0.1](https://img.shields.io/badge/spec-v0.1-111111?style=flat&labelColor=111111&color=FF4F18)](https://omnibuf.com/spec)
 [![Website](https://img.shields.io/badge/website-omnibuf.com-111111?style=flat&labelColor=111111&color=D4FF33)](https://omnibuf.com)
 
-A `jq`-style command-line tool for inspecting, querying, encoding, and decoding **OmniBuf** binary messages.
+A `jq`-style command-line tool for inspecting, querying, encoding, and decoding **[OmniBuf v0.1](https://omnibuf.com/spec)** binary messages.
 
 - **Auto-detects direction**: Pipe an OmniBuf packet in to get pretty JSON out; pipe JSON in to get a self-describing OmniBuf binary packet (`Field #0` `SchemaMeta`) out.
 - **Built-in `jq` filter engine**: Query nested fields, filter arrays with `select(...)`, and reshape messages on the fly (`omnibuf -r '.location.city' packet.obuf`).
