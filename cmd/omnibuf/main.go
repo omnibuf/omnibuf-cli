@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/omnibuf/omnibuf-go"
+	_ "github.com/omnibuf/omnibuf-go/omnibufproto"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
