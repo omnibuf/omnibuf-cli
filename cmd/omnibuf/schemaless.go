@@ -32,7 +32,7 @@ type orderedObject struct {
 func parseOrderedJSON(data []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
-	val, err := readJSONValue(dec)
+	val, err := readJSONValue(dec, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -42,15 +42,18 @@ func parseOrderedJSON(data []byte) (any, error) {
 	return val, nil
 }
 
-func readJSONValue(dec *json.Decoder) (any, error) {
+func readJSONValue(dec *json.Decoder, depth int) (any, error) {
+	if depth > omnibuf.MaxNestingDepth+2 {
+		return nil, fmt.Errorf("JSON nesting depth exceeds maximum allowed depth (%d)", omnibuf.MaxNestingDepth)
+	}
 	tok, err := dec.Token()
 	if err != nil {
 		return nil, err
 	}
-	return readJSONToken(dec, tok)
+	return readJSONToken(dec, tok, depth)
 }
 
-func readJSONToken(dec *json.Decoder, tok json.Token) (any, error) {
+func readJSONToken(dec *json.Decoder, tok json.Token, depth int) (any, error) {
 	switch t := tok.(type) {
 	case json.Delim:
 		switch t {
@@ -66,7 +69,7 @@ func readJSONToken(dec *json.Decoder, tok json.Token) (any, error) {
 				if !ok {
 					return nil, fmt.Errorf("expected string object key, got %v", kt)
 				}
-				val, err := readJSONValue(dec)
+				val, err := readJSONValue(dec, depth+1)
 				if err != nil {
 					return nil, err
 				}
@@ -84,7 +87,7 @@ func readJSONToken(dec *json.Decoder, tok json.Token) (any, error) {
 		case '[':
 			var arr []any
 			for dec.More() {
-				elem, err := readJSONValue(dec)
+				elem, err := readJSONValue(dec, depth+1)
 				if err != nil {
 					return nil, err
 				}
@@ -146,8 +149,11 @@ func encodeSchemalessJSON(jsonBytes []byte, includeField0 bool, deterministic bo
 	if !ok {
 		return nil, errors.New("top-level JSON value must be a JSON object")
 	}
+	return encodeOrderedRootObject(rootObj, includeField0, deterministic)
+}
 
-	body, meta, err := encodeOrderedObject(rootObj, deterministic, nil)
+func encodeOrderedRootObject(rootObj *orderedObject, includeField0 bool, deterministic bool) ([]byte, error) {
+	body, meta, err := encodeOrderedObject(rootObj, deterministic, nil, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -163,10 +169,27 @@ func encodeSchemalessJSON(jsonBytes []byte, includeField0 bool, deterministic bo
 
 type fieldAssignment struct {
 	keyToNum map[string]uint32
+	children map[uint32]*fieldAssignment
 	meta     *omnibuf.SchemaMeta
 }
 
-func buildFieldAssignment(objs []*orderedObject, deterministic bool) *fieldAssignment {
+func collectChildObjects(val any, dst []*orderedObject) []*orderedObject {
+	switch v := val.(type) {
+	case *orderedObject:
+		if v != nil {
+			dst = append(dst, v)
+		}
+	case []any:
+		for _, elem := range v {
+			if o, ok := elem.(*orderedObject); ok && o != nil {
+				dst = append(dst, o)
+			}
+		}
+	}
+	return dst
+}
+
+func buildFieldAssignment(objs []*orderedObject, deterministic bool, schemaDepth int) *fieldAssignment {
 	var keys []string
 	seen := make(map[string]bool)
 	for _, obj := range objs {
@@ -212,18 +235,52 @@ func buildFieldAssignment(objs []*orderedObject, deterministic bool) *fieldAssig
 	if len(meta.Fields) == 0 {
 		meta.Fields = nil
 	}
+
+	var children map[uint32]*fieldAssignment
+	for _, k := range keys {
+		fnum := keyToNum[k]
+		var childObjs []*orderedObject
+		for _, obj := range objs {
+			if obj == nil {
+				continue
+			}
+			for _, f := range obj.Fields {
+				if f.Key == k {
+					childObjs = collectChildObjects(f.Value, childObjs)
+				}
+			}
+		}
+		if len(childObjs) > 0 {
+			childAssign := buildFieldAssignment(childObjs, deterministic, schemaDepth+2)
+			if children == nil {
+				children = make(map[uint32]*fieldAssignment)
+			}
+			children[fnum] = childAssign
+			if schemaDepth+3 <= omnibuf.MaxNestingDepth && childAssign.meta != nil && (len(childAssign.meta.Fields) > 0 || len(childAssign.meta.Children) > 0) {
+				if meta.Children == nil {
+					meta.Children = make(map[uint32]*omnibuf.SchemaMeta)
+				}
+				meta.Children[fnum] = childAssign.meta
+			}
+		}
+	}
+
 	return &fieldAssignment{
 		keyToNum: keyToNum,
+		children: children,
 		meta:     meta,
 	}
 }
 
-func encodeOrderedObject(obj *orderedObject, deterministic bool, assign *fieldAssignment) ([]byte, *omnibuf.SchemaMeta, error) {
+func encodeOrderedObject(obj *orderedObject, deterministic bool, assign *fieldAssignment, depth int) ([]byte, *omnibuf.SchemaMeta, error) {
+	if depth > omnibuf.MaxNestingDepth {
+		return nil, nil, fmt.Errorf("omnibuf: nesting depth %d exceeds MaxNestingDepth (%d)", depth, omnibuf.MaxNestingDepth)
+	}
 	if obj == nil {
 		return nil, nil, nil
 	}
 	if assign == nil {
-		assign = buildFieldAssignment([]*orderedObject{obj}, deterministic)
+		assign = buildFieldAssignment([]*orderedObject{obj}, deterministic, 1)
 	}
 
 	fields := obj.Fields
@@ -238,17 +295,14 @@ func encodeOrderedObject(obj *orderedObject, deterministic bool, assign *fieldAs
 	var dst []byte
 	for _, f := range fields {
 		fnum := assign.keyToNum[f.Key]
+		var childAssign *fieldAssignment
+		if assign.children != nil {
+			childAssign = assign.children[fnum]
+		}
 		var err error
-		var childMeta *omnibuf.SchemaMeta
-		dst, childMeta, err = appendSchemalessField(dst, fnum, f.Value, deterministic)
+		dst, _, err = appendSchemalessField(dst, fnum, f.Value, deterministic, childAssign, depth)
 		if err != nil {
 			return nil, nil, fmt.Errorf("field %q: %w", f.Key, err)
-		}
-		if childMeta != nil && (len(childMeta.Fields) > 0 || len(childMeta.Children) > 0) {
-			if assign.meta.Children == nil {
-				assign.meta.Children = make(map[uint32]*omnibuf.SchemaMeta)
-			}
-			assign.meta.Children[fnum] = childMeta
 		}
 	}
 	return dst, assign.meta, nil
@@ -286,7 +340,7 @@ func classifyJSONNumber(n json.Number) (u64 uint64, i64 int64, f64 float64, kind
 	return 0, 0, f, wire.WireFloat64, nil
 }
 
-func appendSchemalessField(dst []byte, fnum uint32, val any, deterministic bool) ([]byte, *omnibuf.SchemaMeta, error) {
+func appendSchemalessField(dst []byte, fnum uint32, val any, deterministic bool, childAssign *fieldAssignment, depth int) ([]byte, *omnibuf.SchemaMeta, error) {
 	if val == nil {
 		return dst, nil, nil
 	}
@@ -332,7 +386,7 @@ func appendSchemalessField(dst []byte, fnum uint32, val any, deterministic bool)
 		return dst, nil, nil
 
 	case *orderedObject:
-		subBody, childMeta, err := encodeOrderedObject(v, deterministic, nil)
+		subBody, childMeta, err := encodeOrderedObject(v, deterministic, childAssign, depth+1)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -342,14 +396,17 @@ func appendSchemalessField(dst []byte, fnum uint32, val any, deterministic bool)
 		return dst, childMeta, nil
 
 	case []any:
-		return appendSchemalessArray(dst, fnum, v, deterministic)
+		return appendSchemalessArray(dst, fnum, v, deterministic, childAssign, depth)
 
 	default:
 		return nil, nil, fmt.Errorf("unsupported JSON value %T", val)
 	}
 }
 
-func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministic bool) ([]byte, *omnibuf.SchemaMeta, error) {
+func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministic bool, sharedAssign *fieldAssignment, depth int) ([]byte, *omnibuf.SchemaMeta, error) {
+	if depth+1 > omnibuf.MaxNestingDepth {
+		return nil, nil, fmt.Errorf("omnibuf: nesting depth %d exceeds MaxNestingDepth (%d)", depth+1, omnibuf.MaxNestingDepth)
+	}
 	var elems []any
 	for _, e := range rawElems {
 		if e != nil {
@@ -491,12 +548,14 @@ func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministi
 			}
 			objs[i] = o
 		}
-		sharedAssign := buildFieldAssignment(objs, deterministic)
+		if sharedAssign == nil {
+			sharedAssign = buildFieldAssignment(objs, deterministic, 1)
+		}
 		var body []byte
 		body = append(body, wire.WireSubMsg)
 		body = wire.AppendVarint(body, uint64(len(objs)))
 		for _, o := range objs {
-			elemBytes, _, err := encodeOrderedObject(o, deterministic, sharedAssign)
+			elemBytes, _, err := encodeOrderedObject(o, deterministic, sharedAssign, depth+2)
 			if err != nil {
 				return nil, nil, err
 			}

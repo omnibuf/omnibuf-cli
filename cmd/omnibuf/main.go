@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -171,14 +172,23 @@ func isLikelyFilePath(arg string) bool {
 
 func looksLikeJSONInput(raw []byte) bool {
 	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || !utf8.Valid(trimmed) {
+	if len(trimmed) < 2 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' || !utf8.Valid(trimmed) {
 		return false
 	}
-	if trimmed[0] != '{' {
-		return false
+	return json.Valid(trimmed)
+}
+
+func tryParseJSONObjectInput(raw []byte) (*orderedObject, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) < 2 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' || !utf8.Valid(trimmed) {
+		return nil, false
 	}
-	var js map[string]any
-	return json.Unmarshal(trimmed, &js) == nil
+	val, err := parseOrderedJSON(trimmed)
+	if err != nil {
+		return nil, false
+	}
+	obj, ok := val.(*orderedObject)
+	return obj, ok
 }
 
 func runAuto(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -253,7 +263,15 @@ func runAuto(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return errors.New("empty input (pass a file path, pipe bytes to stdin, or run 'omnibuf --help')")
 	}
 
-	isJSON := looksLikeJSONInput(rawInput)
+	var parsedRootObj *orderedObject
+	var isJSON bool
+	if !forceDecode {
+		if schemaPath == "" && queryExpr == "" {
+			parsedRootObj, isJSON = tryParseJSONObjectInput(rawInput)
+		} else {
+			isJSON = looksLikeJSONInput(rawInput)
+		}
+	}
 	if forceEncode && !isJSON {
 		// Decode OmniBuf input first, apply optional jq filter, then re-encode to OmniBuf!
 		decodedJSON, err := decodeWireToJSON(rawInput, schemaPath, msgType, *maxSchemaBytes, isHex, isBase64, true, false, queryExpr)
@@ -264,6 +282,16 @@ func runAuto(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 
 	if forceEncode || (!forceDecode && isJSON && queryExpr == "") {
+		if parsedRootObj != nil && schemaPath == "" {
+			if msgType != "" {
+				return errors.New("--type requires --schema (-s)")
+			}
+			wireBytes, err := encodeOrderedRootObject(parsedRootObj, !noField0, deterministic)
+			if err != nil {
+				return err
+			}
+			return writeFormattedWireOutput(wireBytes, outputPath, stdout, isHex, isBase64)
+		}
 		return encodeJSONToOutput(rawInput, schemaPath, msgType, *maxSchemaBytes, outputPath, stdout, field0, noField0, deterministic, isHex, isBase64)
 	}
 
@@ -498,6 +526,10 @@ func encodeJSONToOutput(jsonBytes []byte, schemaPath, msgType string, maxSchemaB
 		}
 	}
 
+	return writeFormattedWireOutput(wireBytes, outputPath, stdout, isHex, isBase64)
+}
+
+func writeFormattedWireOutput(wireBytes []byte, outputPath string, stdout io.Writer, isHex, isBase64 bool) error {
 	if isHex {
 		hexOut := []byte(hex.EncodeToString(wireBytes) + "\n")
 		return writeOutput(outputPath, stdout, hexOut)
@@ -709,6 +741,19 @@ func decodeHexBytes(raw []byte) ([]byte, error) {
 	return out[:n], nil
 }
 
+func formatNonFiniteFloat(f float64) (string, bool) {
+	switch {
+	case math.IsNaN(f):
+		return "NaN", true
+	case math.IsInf(f, 1):
+		return "Infinity", true
+	case math.IsInf(f, -1):
+		return "-Infinity", true
+	default:
+		return "", false
+	}
+}
+
 func sanitizeForJSON(v any) any {
 	switch val := v.(type) {
 	case map[string]any:
@@ -720,13 +765,78 @@ func sanitizeForJSON(v any) any {
 	case map[any]any:
 		out := make(map[string]any, len(val))
 		for k, elem := range val {
-			out[fmt.Sprint(k)] = sanitizeForJSON(elem)
+			out[fmt.Sprint(sanitizeForJSON(k))] = sanitizeForJSON(elem)
 		}
 		return out
 	case []map[string]any:
 		out := make([]any, len(val))
 		for i, elem := range val {
 			out[i] = sanitizeForJSON(elem)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, elem := range val {
+			out[i] = sanitizeForJSON(elem)
+		}
+		return out
+	case []byte:
+		return "base64:" + base64.StdEncoding.EncodeToString(val)
+	case [][]byte:
+		out := make([]string, len(val))
+		for i, b := range val {
+			out[i] = "base64:" + base64.StdEncoding.EncodeToString(b)
+		}
+		return out
+	case float64:
+		if s, nonFinite := formatNonFiniteFloat(val); nonFinite {
+			return s
+		}
+		return val
+	case float32:
+		if s, nonFinite := formatNonFiniteFloat(float64(val)); nonFinite {
+			return s
+		}
+		return val
+	case []float64:
+		hasNonFinite := false
+		for _, f := range val {
+			if math.IsNaN(f) || math.IsInf(f, 0) {
+				hasNonFinite = true
+				break
+			}
+		}
+		if !hasNonFinite {
+			return val
+		}
+		out := make([]any, len(val))
+		for i, f := range val {
+			if s, nonFinite := formatNonFiniteFloat(f); nonFinite {
+				out[i] = s
+			} else {
+				out[i] = f
+			}
+		}
+		return out
+	case []float32:
+		hasNonFinite := false
+		for _, f := range val {
+			f64 := float64(f)
+			if math.IsNaN(f64) || math.IsInf(f64, 0) {
+				hasNonFinite = true
+				break
+			}
+		}
+		if !hasNonFinite {
+			return val
+		}
+		out := make([]any, len(val))
+		for i, f := range val {
+			if s, nonFinite := formatNonFiniteFloat(float64(f)); nonFinite {
+				out[i] = s
+			} else {
+				out[i] = f
+			}
 		}
 		return out
 	case []string:

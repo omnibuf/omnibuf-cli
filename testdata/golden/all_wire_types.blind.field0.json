@@ -53,7 +53,7 @@
     "id": 7,
     "label": "primary-sub"
   },
-  "raw_bytes": "yv66vg==",
+  "raw_bytes": "base64:yv66vg==",
   "s64": -123456789,
   "s64_arr": [
     -8192,

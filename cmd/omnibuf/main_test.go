@@ -198,7 +198,7 @@ func TestJQStyleWorkflowAndSchemalessRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(decOut.Bytes(), &decoded); err != nil {
 		t.Fatalf("unmarshal decoded JSON: %v", err)
 	}
-	if decoded["router_id"] != "edge-rtr-fra-01" || decoded["rssi_dbm"] != float64(-62) || decoded["raw_payload"] != "deadbeef" {
+	if decoded["router_id"] != "edge-rtr-fra-01" || decoded["rssi_dbm"] != float64(-62) || decoded["raw_payload"] != "base64:deadbeef" {
 		t.Fatalf("unexpected decoded root fields: %v", decoded)
 	}
 
