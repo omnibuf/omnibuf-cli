@@ -6,6 +6,8 @@ github.com/itchyny/timefmt-go v0.1.9 h1:J4j1qMqZbg5jycwT6zIKfRgZ9aqqMxqanaI6Rr9E
 github.com/itchyny/timefmt-go v0.1.9/go.mod h1:5E46Q+zj7vbTgWY8o5YkMeYb4I6GeWLFnetPy5oBrAI=
 github.com/omnibuf/omnibuf-go v0.2.1 h1:inuDAF2t65OLfBf4V/rWibkfkxzZzpT3ylN76ifJff0=
 github.com/omnibuf/omnibuf-go v0.2.1/go.mod h1:wrcpM54pcS4exzDj7xo7aa/ivD2GrFzmXV63FwMETNI=
+github.com/omnibuf/omnibuf-go v0.2.2 h1:z5oQAxWFEgTDC42Zb46f1dXjAvfSCyXjTEDUOJ26J5g=
+github.com/omnibuf/omnibuf-go v0.2.2/go.mod h1:wrcpM54pcS4exzDj7xo7aa/ivD2GrFzmXV63FwMETNI=
 github.com/omnibuf/omnibuf-go/omnibufproto v0.2.1 h1:CFL/q5Qga6O7gcQqWUpjPC1u5UP3gLzFSSCd+O1DBpo=
 github.com/omnibuf/omnibuf-go/omnibufproto v0.2.1/go.mod h1:5ezrfykiw4K3yJKfHYzcz2FkdiXsewwCBrtG7GhuOcE=
 google.golang.org/protobuf v1.36.12 h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=
