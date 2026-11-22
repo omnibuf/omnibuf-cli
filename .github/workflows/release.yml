@@ -13,7 +13,7 @@ concurrency:
 jobs:
   release:
     name: Build & Publish omnibuf CLI Release Assets
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
