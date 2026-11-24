@@ -10,7 +10,11 @@ github.com/omnibuf/omnibuf-go v0.2.2 h1:z5oQAxWFEgTDC42Zb46f1dXjAvfSCyXjTEDUOJ26
 github.com/omnibuf/omnibuf-go v0.2.2/go.mod h1:wrcpM54pcS4exzDj7xo7aa/ivD2GrFzmXV63FwMETNI=
 github.com/omnibuf/omnibuf-go v0.2.3 h1:JJI5ym021GzuEeEfi/9WF88BbQrv7xo38IMockR5kEs=
 github.com/omnibuf/omnibuf-go v0.2.3/go.mod h1:wrcpM54pcS4exzDj7xo7aa/ivD2GrFzmXV63FwMETNI=
+github.com/omnibuf/omnibuf-go v0.2.5 h1:n4I0ma9S5paNiyC0KhxSTw1mUbBHxztTy+vmhXVx8mM=
+github.com/omnibuf/omnibuf-go v0.2.5/go.mod h1:wrcpM54pcS4exzDj7xo7aa/ivD2GrFzmXV63FwMETNI=
 github.com/omnibuf/omnibuf-go/omnibufproto v0.2.1 h1:CFL/q5Qga6O7gcQqWUpjPC1u5UP3gLzFSSCd+O1DBpo=
 github.com/omnibuf/omnibuf-go/omnibufproto v0.2.1/go.mod h1:5ezrfykiw4K3yJKfHYzcz2FkdiXsewwCBrtG7GhuOcE=
+github.com/omnibuf/omnibuf-go/omnibufproto v0.2.7 h1:k6cnp8XKW93UMWXKdsTDuAqX19wZhUYbvURGppdPDwY=
+github.com/omnibuf/omnibuf-go/omnibufproto v0.2.7/go.mod h1:wpmsJn2nrx2HuO/1uh5tafNcT2FAYAsa6mhO1tmSRr8=
 google.golang.org/protobuf v1.36.12 h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=
 google.golang.org/protobuf v1.36.12/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
