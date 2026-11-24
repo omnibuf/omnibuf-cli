@@ -729,7 +729,7 @@ func writeOutput(path string, stdout io.Writer, data []byte) error {
 		_, err := stdout.Write(data)
 		return err
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write %q: %w", path, err)
 	}
 	return nil

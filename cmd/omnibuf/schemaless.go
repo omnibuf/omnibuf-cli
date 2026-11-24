@@ -182,9 +182,7 @@ func collectChildObjects(val any, dst []*orderedObject) []*orderedObject {
 		}
 	case []any:
 		for _, elem := range v {
-			if o, ok := elem.(*orderedObject); ok && o != nil {
-				dst = append(dst, o)
-			}
+			dst = collectChildObjects(elem, dst)
 		}
 	}
 	return dst
@@ -405,8 +403,103 @@ func appendSchemalessField(dst []byte, fnum uint32, val any, deterministic bool,
 }
 
 func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministic bool, sharedAssign *fieldAssignment, depth int) ([]byte, *omnibuf.SchemaMeta, error) {
-	if depth+1 > omnibuf.MaxNestingDepth {
-		return nil, nil, fmt.Errorf("omnibuf: nesting depth %d exceeds MaxNestingDepth (%d)", depth+1, omnibuf.MaxNestingDepth)
+	body, meta, err := encodeSchemalessArrayBody(rawElems, deterministic, sharedAssign, depth+1, -1)
+	if err != nil {
+		return nil, nil, err
+	}
+	dst = appendTag(dst, fnum, wire.WireArray)
+	dst = wire.AppendVarint(dst, uint64(len(body)))
+	dst = append(dst, body...)
+	return dst, meta, nil
+}
+
+// inferNestedArrayHint inspects sibling inner slices of a nested array to pick a
+// consistent element wire type across non-empty and empty inner arrays.
+func inferNestedArrayHint(innerArrays [][]any) int {
+	hasElem := false
+	allNum := true
+	allUint := true
+	allInt := true
+	allStr := true
+	allBase64 := true
+	allBool := true
+	allObj := true
+	allArr := true
+
+	for _, arr := range innerArrays {
+		for _, e := range arr {
+			if e == nil {
+				continue
+			}
+			hasElem = true
+			switch v := e.(type) {
+			case json.Number:
+				allStr, allBool, allObj, allArr = false, false, false, false
+				u64, _, _, kind, err := classifyJSONNumber(v)
+				if err != nil {
+					allNum = false
+					continue
+				}
+				switch kind {
+				case wire.WireUint:
+					if u64 > math.MaxInt64 {
+						allInt = false
+					}
+				case wire.WireSint:
+					allUint = false
+				default:
+					allUint = false
+					allInt = false
+				}
+			case string:
+				allNum, allBool, allObj, allArr = false, false, false, false
+				if allBase64 {
+					if _, ok := decodeBase64Literal(v); !ok {
+						allBase64 = false
+					}
+				}
+			case bool:
+				allNum, allStr, allObj, allArr = false, false, false, false
+			case *orderedObject:
+				allNum, allStr, allBool, allArr = false, false, false, false
+			case []any:
+				allNum, allStr, allBool, allObj = false, false, false, false
+			default:
+				return -1
+			}
+		}
+	}
+	if !hasElem {
+		return -1
+	}
+	switch {
+	case allNum:
+		if allUint {
+			return int(wire.WireUint)
+		}
+		if allInt {
+			return int(wire.WireSint)
+		}
+		return int(wire.WireFloat64)
+	case allStr:
+		if allBase64 {
+			return int(wire.WireBytes)
+		}
+		return int(wire.WireString)
+	case allBool:
+		return int(wire.WireBoolFalse)
+	case allObj:
+		return int(wire.WireSubMsg)
+	case allArr:
+		return int(wire.WireArray)
+	default:
+		return -1
+	}
+}
+
+func encodeSchemalessArrayBody(rawElems []any, deterministic bool, sharedAssign *fieldAssignment, depth int, hintWT int) ([]byte, *omnibuf.SchemaMeta, error) {
+	if depth > omnibuf.MaxNestingDepth {
+		return nil, nil, fmt.Errorf("omnibuf: nesting depth %d exceeds MaxNestingDepth (%d)", depth, omnibuf.MaxNestingDepth)
 	}
 	var elems []any
 	for _, e := range rawElems {
@@ -415,7 +508,15 @@ func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministi
 		}
 	}
 	if len(elems) == 0 {
-		return dst, nil, nil
+		elemWT := wire.WireUint
+		if hintWT >= 0 {
+			elemWT = uint8(hintWT)
+		} else if sharedAssign != nil {
+			elemWT = wire.WireSubMsg
+		}
+		body := []byte{elemWT}
+		body = wire.AppendVarint(body, 0)
+		return body, nil, nil
 	}
 
 	switch elems[0].(type) {
@@ -434,14 +535,11 @@ func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministi
 				body = append(body, 0)
 			}
 		}
-		dst = appendTag(dst, fnum, wire.WireArray)
-		dst = wire.AppendVarint(dst, uint64(len(body)))
-		dst = append(dst, body...)
-		return dst, nil, nil
+		return body, nil, nil
 
 	case string:
 		strs := make([]string, len(elems))
-		allBase64 := true
+		allBase64 := hintWT != int(wire.WireString)
 		decodedBytes := make([][]byte, len(elems))
 		for i, e := range elems {
 			s, ok := e.(string)
@@ -473,14 +571,11 @@ func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministi
 				body = append(body, s...)
 			}
 		}
-		dst = appendTag(dst, fnum, wire.WireArray)
-		dst = wire.AppendVarint(dst, uint64(len(body)))
-		dst = append(dst, body...)
-		return dst, nil, nil
+		return body, nil, nil
 
 	case json.Number:
-		allUint := true
-		allInt := true
+		allUint := hintWT != int(wire.WireSint) && hintWT != int(wire.WireFloat64)
+		allInt := hintWT != int(wire.WireFloat64)
 		uVals := make([]uint64, len(elems))
 		iVals := make([]int64, len(elems))
 		fVals := make([]float64, len(elems))
@@ -535,10 +630,7 @@ func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministi
 				body = append(body, b[:]...)
 			}
 		}
-		dst = appendTag(dst, fnum, wire.WireArray)
-		dst = wire.AppendVarint(dst, uint64(len(body)))
-		dst = append(dst, body...)
-		return dst, nil, nil
+		return body, nil, nil
 
 	case *orderedObject:
 		objs := make([]*orderedObject, len(elems))
@@ -556,17 +648,41 @@ func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministi
 		body = append(body, wire.WireSubMsg)
 		body = wire.AppendVarint(body, uint64(len(objs)))
 		for _, o := range objs {
-			elemBytes, _, err := encodeOrderedObject(o, deterministic, sharedAssign, depth+2)
+			elemBytes, _, err := encodeOrderedObject(o, deterministic, sharedAssign, depth+1)
 			if err != nil {
 				return nil, nil, err
 			}
 			body = wire.AppendVarint(body, uint64(len(elemBytes)))
 			body = append(body, elemBytes...)
 		}
-		dst = appendTag(dst, fnum, wire.WireArray)
-		dst = wire.AppendVarint(dst, uint64(len(body)))
-		dst = append(dst, body...)
-		return dst, sharedAssign.meta, nil
+		return body, sharedAssign.meta, nil
+
+	case []any:
+		innerArrays := make([][]any, len(elems))
+		for i, e := range elems {
+			arr, ok := e.([]any)
+			if !ok {
+				return nil, nil, errors.New("mixed types in nested array")
+			}
+			innerArrays[i] = arr
+		}
+		innerHint := inferNestedArrayHint(innerArrays)
+		var body []byte
+		body = append(body, wire.WireArray)
+		body = wire.AppendVarint(body, uint64(len(innerArrays)))
+		var meta *omnibuf.SchemaMeta
+		for _, inner := range innerArrays {
+			elemBody, elemMeta, err := encodeSchemalessArrayBody(inner, deterministic, sharedAssign, depth+1, innerHint)
+			if err != nil {
+				return nil, nil, err
+			}
+			if meta == nil && elemMeta != nil {
+				meta = elemMeta
+			}
+			body = wire.AppendVarint(body, uint64(len(elemBody)))
+			body = append(body, elemBody...)
+		}
+		return body, meta, nil
 
 	default:
 		return nil, nil, fmt.Errorf("unsupported array element type %T", elems[0])

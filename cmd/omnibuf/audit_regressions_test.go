@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -179,5 +181,98 @@ func TestMutuallyExclusiveFlags(t *testing.T) {
 				t.Fatalf("run(%v) error = %q, want substring %q", tc.args, err.Error(), tc.wantSub)
 			}
 		})
+	}
+}
+
+func TestSchemalessNestedAndEmptyArrays(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  map[string]any
+	}{
+		{
+			name:  "nested_uint_arrays",
+			input: `{"matrix":[[1,2],[3]]}`,
+			want: map[string]any{
+				"matrix": []any{
+					[]any{float64(1), float64(2)},
+					[]any{float64(3)},
+				},
+			},
+		},
+		{
+			name:  "nested_mixed_sign_arrays",
+			input: `{"matrix":[[1,2],[-3]]}`,
+			want: map[string]any{
+				"matrix": []any{
+					[]any{float64(1), float64(2)},
+					[]any{float64(-3)},
+				},
+			},
+		},
+		{
+			name:  "nested_with_empty_inner",
+			input: `{"matrix":[[1,2],[]]}`,
+			want: map[string]any{
+				"matrix": []any{
+					[]any{float64(1), float64(2)},
+					[]any{},
+				},
+			},
+		},
+		{
+			name:  "empty_array",
+			input: `{"empty":[]}`,
+			want: map[string]any{
+				"empty": []any{},
+			},
+		},
+		{
+			name:  "nested_object_arrays",
+			input: `{"groups":[[{"a":1}],[{"b":2}]]}`,
+			want: map[string]any{
+				"groups": []any{
+					[]any{map[string]any{"a": float64(1)}},
+					[]any{map[string]any{"b": float64(2)}},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var wireOut, decOut, stderr bytes.Buffer
+			if err := run([]string{"encode"}, strings.NewReader(tc.input), &wireOut, &stderr); err != nil {
+				t.Fatalf("encode failed: %v (stderr: %s)", err, stderr.String())
+			}
+			if err := run([]string{"decode"}, bytes.NewReader(wireOut.Bytes()), &decOut, &stderr); err != nil {
+				t.Fatalf("decode failed: %v (stderr: %s)", err, stderr.String())
+			}
+			var got map[string]any
+			if err := json.Unmarshal(decOut.Bytes(), &got); err != nil {
+				t.Fatalf("json.Unmarshal failed: %v\noutput: %s", err, decOut.String())
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("round-trip mismatch:\n got: %#v\nwant: %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWriteOutputPermissions(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.obuf")
+	if err := writeOutput(outPath, nil, []byte{0x01}); err != nil {
+		t.Fatalf("writeOutput: %v", err)
+	}
+	info, err := os.Stat(outPath)
+	if err != nil {
+		t.Fatalf("os.Stat: %v", err)
+	}
+	// Group/other read bits should be requested (0o644 minus process umask; never 0o600 under standard 0o022 umask).
+	if info.Mode().Perm()&0o600 != 0o600 {
+		t.Fatalf("unexpected permissions %o", info.Mode().Perm())
+	}
+	if info.Mode().Perm()&0o044 == 0 {
+		t.Fatalf("expected readable permissions from 0o644, got %o", info.Mode().Perm())
 	}
 }
