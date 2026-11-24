@@ -1,83 +1,50 @@
-# OmniBuf CLI (`omnibuf`)
+# omnibuf-cli
 
-[![CI](https://github.com/omnibuf/omnibuf-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/omnibuf/omnibuf-cli/actions/workflows/ci.yml)
-[![Wire Spec: v0.1](https://img.shields.io/badge/spec-v0.1-111111?style=flat&labelColor=111111&color=FF4F18)](https://omnibuf.com/spec)
-[![Website](https://img.shields.io/badge/website-omnibuf.com-111111?style=flat&labelColor=111111&color=D4FF33)](https://omnibuf.com)
+[![OmniBuf Spec: v1 DRAFT-1](https://img.shields.io/badge/OmniBuf%20Spec-v1%20DRAFT--1-FF4F18)](https://omnibuf.com/spec)
 
-A `jq`-style command-line tool for inspecting, querying, encoding, and decoding **[OmniBuf v0.1](https://omnibuf.com/spec)** binary messages.
-
-- **Auto-detects direction**: Pipe an OmniBuf packet in to get pretty JSON out; pipe JSON in to get a self-describing OmniBuf binary packet (`Field #0` `SchemaMeta`) out.
-- **Built-in `jq` filter engine**: Query nested fields, filter arrays with `select(...)`, and reshape messages on the fly (`omnibuf -r '.location.city' packet.obuf`).
-- **Zero `.proto` required (or bring a `FileDescriptorSet`)**: Works out of the box with no schema files using OmniBuf's 16 explicit wire types and `Field #0` metadata, or accepts `.fds.json` / `.fds.pb` / `.fds.pb.gz` schemas via `-s`.
-
----
+Command-line tool (`omnibuf`) for inspecting, querying, encoding, and decoding [OmniBuf Wire Specification v1 DRAFT-1](https://omnibuf.com/spec) packets. Full docs live at [omnibuf.com/tooling](https://omnibuf.com/tooling).
 
 ## Install
 
-### Homebrew (macOS & Linux)
-
 ```bash
+# Homebrew (macOS & Linux)
 brew install omnibuf/tap/omnibuf
-```
 
-### Shell Script (macOS & Linux)
-
-```bash
+# Shell script (macOS & Linux)
 curl -fsSL https://omnibuf.com/install.sh | sh
-```
 
-### `mise` (macOS, Linux & Windows)
-
-```bash
+# mise (macOS, Linux & Windows)
 mise use -g github:omnibuf/omnibuf-cli
-```
 
-### Go Toolchain
-
-```bash
+# Go toolchain
 go install github.com/omnibuf/omnibuf-cli/cmd/omnibuf@latest
 ```
 
-Prebuilt archives and SHA-256 checksums are also published on [GitHub Releases](https://github.com/omnibuf/omnibuf-cli/releases).
-
----
-
-## Quick Usage (`jq`-Style)
+## Quick usage
 
 ```bash
-# 1. Encode JSON into a self-describing OmniBuf packet (with Field #0 field names)
-echo '{"asn": 64512, "router_id": "edge-fra-01", "active": true, "location": {"city": "Frankfurt", "rack": 42}}' \
+# Encode JSON to a self-describing OmniBuf packet
+echo '{"asn": 64512, "router_id": "edge-fra-01", "location": {"city": "Frankfurt", "rack": 42}}' \
   | omnibuf > peer.obuf
 
-# 2. Decode any OmniBuf packet to pretty JSON (no schema required)
+# Decode packet to pretty JSON
 omnibuf peer.obuf
 
-# 3. Query with a jq filter expression (-r for raw string output, -c for compact JSON)
+# Query with a jq filter (-r for raw string, -c for compact JSON)
 omnibuf -r '.location.city' peer.obuf
-# Frankfurt
 
-# 4. Mutate an OmniBuf packet in-flight with a jq expression and re-encode (-e)
+# Mutate a packet in-flight and re-encode (-e)
 omnibuf -e '.location.rack += 1' peer.obuf > peer_updated.obuf
-
-# 5. Inspect or emit hex (-x / --hex) or base64 (-b / --base64)
-echo '{"asn": 64512, "router_id": "edge-fra-01"}' | omnibuf -x
-omnibuf -x <<< "19305d2c000a02020661736e0412726f757465725f69642002fc7d002a16656467652d6672612d3031"
 ```
 
----
+## Implementation
 
-## Schema-Aware Mode (`-s` / `--schema`)
-
-Pass a `FileDescriptorSet` (`.json`, `.pb`, or `.pb.gz` produced by `buf build -o schema.pb.gz` or `protoc -o schema.pb`):
-
-```bash
-# Encode JSON using a Protobuf descriptor
-omnibuf -s schema.pb.gz -t PeerUpdate input.json > peer.obuf
-
-# Decode and query using a Protobuf descriptor
-omnibuf -s schema.pb.gz -t PeerUpdate '.neighbors[] | select(.established) | .router' peer.obuf
-```
+- **Auto-detect direction:** Binary OmniBuf input decodes to JSON; JSON input encodes to a self-describing OmniBuf packet with `Field #0` metadata.
+- **Built-in `jq` engine:** Filter nested fields, slice arrays with `select(...)`, and transform payloads in place (`-r`, `-c`, `-e`).
+- **Hex and base64 I/O:** Inspect or emit hex (`-x` / `--hex`) and base64 (`-b` / `--base64`) directly from stdin or files.
+- **Schema-aware mode (`-s` / `--schema`):** Accepts `FileDescriptorSet` files (`.fds.json`, `.fds.pb`, `.fds.pb.gz`) with `-t <TypeName>` to encode, decode, and query schema-typed packets (`omnibuf -s schema.pb.gz -t PeerUpdate '.neighbors[]' peer.obuf`).
+- **Prebuilt binaries:** Release archives and SHA-256 checksums are published on [GitHub Releases](https://github.com/omnibuf/omnibuf-cli/releases).
 
 ## License
 
-Released under the [Apache 2.0 License](./LICENSE).
+Apache-2.0
