@@ -248,6 +248,12 @@ func runAuto(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if forceEncode && forceDecode {
 		return errors.New("cannot specify both --encode (-e) and --decode (-d)")
 	}
+	if isHex && isBase64 {
+		return errors.New("cannot specify both --hex (-x) and --base64 (-b)")
+	}
+	if field0 && noField0 {
+		return errors.New("cannot specify both --field0 and --no-field0")
+	}
 
 	var err error
 	queryExpr, inputPath, err = resolvePositionalFilterAndInput(fs.Args(), queryExpr, inputPath)
@@ -259,7 +265,7 @@ func runAuto(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if len(bytes.TrimSpace(rawInput)) == 0 && len(rawInput) == 0 {
+	if !forceDecode && len(rawInput) == 0 {
 		return errors.New("empty input (pass a file path, pipe bytes to stdin, or run 'omnibuf --help')")
 	}
 
@@ -351,6 +357,9 @@ func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	normArgs := rearrangeInterspersedFlags(args, commonValueFlags)
 	if err := fs.Parse(normArgs); err != nil {
 		return err
+	}
+	if isHex && isBase64 {
+		return errors.New("cannot specify both --hex (-x) and --base64 (-b)")
 	}
 
 	var err error
@@ -476,6 +485,12 @@ func runEncode(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	normArgs := rearrangeInterspersedFlags(args, commonValueFlags)
 	if err := fs.Parse(normArgs); err != nil {
 		return err
+	}
+	if isHex && isBase64 {
+		return errors.New("cannot specify both --hex (-x) and --base64 (-b)")
+	}
+	if field0 && noField0 {
+		return errors.New("cannot specify both --field0 and --no-field0")
 	}
 	if inputPath == "" && fs.NArg() > 0 {
 		inputPath = fs.Arg(0)

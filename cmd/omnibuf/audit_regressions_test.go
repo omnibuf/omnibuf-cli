@@ -106,3 +106,78 @@ func TestAuditGO5c_DecodeNonFiniteFloats(t *testing.T) {
 		})
 	}
 }
+
+func TestJQFilterPreserves64BitIntegers(t *testing.T) {
+	enc := obwire.NewEncoder(64)
+	enc.WriteUint(1, 9007199254740993)     // 2^53 + 1
+	enc.WriteUint(2, 18446744073709551615) // math.MaxUint64
+	enc.WriteInt(3, -9223372036854775808)  // math.MinInt64
+	enc.WriteFloat64(4, 3.14159)
+	pkt := append([]byte(nil), enc.Finish()...)
+
+	for _, tc := range []struct {
+		name   string
+		args   []string
+		expect string
+	}{
+		{name: "uint_above_2_53", args: []string{"decode", "-q", ".field_1"}, expect: "9007199254740993"},
+		{name: "max_uint64", args: []string{"decode", "-q", ".field_2"}, expect: "18446744073709551615"},
+		{name: "min_int64", args: []string{"decode", "-q", ".field_3"}, expect: "-9223372036854775808"},
+		{name: "raw_tostring_max_uint64", args: []string{"decode", "-r", "-q", ".field_2 | tostring"}, expect: "18446744073709551615"},
+		{name: "float_preserved", args: []string{"decode", "-q", ".field_4"}, expect: "3.14159"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := run(tc.args, bytes.NewReader(pkt), &stdout, &stderr); err != nil {
+				t.Fatalf("run(%v) failed: %v (stderr: %s)", tc.args, err, stderr.String())
+			}
+			got := strings.TrimSpace(stdout.String())
+			if got != tc.expect {
+				t.Fatalf("run(%v) = %q, want %q", tc.args, got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestAutoModeDecodeEmptyPacket(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"-d"}, bytes.NewReader(nil), &stdout, &stderr); err != nil {
+		t.Fatalf("omnibuf -d on 0-byte packet failed: %v (stderr: %s)", err, stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "{}" {
+		t.Fatalf("omnibuf -d on 0-byte packet = %q, want \"{}\"", strings.TrimSpace(stdout.String()))
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := run(nil, bytes.NewReader(nil), &stdout, &stderr); err == nil {
+		t.Fatal("omnibuf auto mode without -d on 0-byte input unexpectedly succeeded")
+	}
+}
+
+func TestMutuallyExclusiveFlags(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		wantSub string
+	}{
+		{name: "auto_hex_base64", args: []string{"--hex", "--base64"}, wantSub: "--hex"},
+		{name: "auto_short_hex_base64", args: []string{"-x", "-b"}, wantSub: "--hex"},
+		{name: "auto_field0_nofield0", args: []string{"--field0", "--no-field0"}, wantSub: "--field0"},
+		{name: "decode_hex_base64", args: []string{"decode", "--hex", "--base64"}, wantSub: "--hex"},
+		{name: "encode_hex_base64", args: []string{"encode", "--hex", "--base64"}, wantSub: "--hex"},
+		{name: "encode_field0_nofield0", args: []string{"encode", "--field0", "--no-field0"}, wantSub: "--field0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := run(tc.args, strings.NewReader("{}"), &stdout, &stderr)
+			if err == nil {
+				t.Fatalf("run(%v) succeeded, want mutually exclusive flag error", tc.args)
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Fatalf("run(%v) error = %q, want substring %q", tc.args, err.Error(), tc.wantSub)
+			}
+		})
+	}
+}

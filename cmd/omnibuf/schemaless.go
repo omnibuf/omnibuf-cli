@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"sort"
 	"strconv"
 	"strings"
@@ -572,6 +573,46 @@ func appendSchemalessArray(dst []byte, fnum uint32, rawElems []any, deterministi
 	}
 }
 
+func normalizeJSONForJQ(v any) (any, error) {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, elem := range x {
+			nv, err := normalizeJSONForJQ(elem)
+			if err != nil {
+				return nil, err
+			}
+			x[k] = nv
+		}
+		return x, nil
+	case []any:
+		for i, elem := range x {
+			nv, err := normalizeJSONForJQ(elem)
+			if err != nil {
+				return nil, err
+			}
+			x[i] = nv
+		}
+		return x, nil
+	case json.Number:
+		s := x.String()
+		if !strings.ContainsAny(s, ".eE") {
+			if iv, err := strconv.Atoi(s); err == nil {
+				return iv, nil
+			}
+			if bi, ok := new(big.Int).SetString(s, 10); ok {
+				return bi, nil
+			}
+		}
+		fv, err := x.Float64()
+		if err != nil {
+			return nil, err
+		}
+		return fv, nil
+	default:
+		return v, nil
+	}
+}
+
 // applyJQFilter runs a jq filter expression against a JSON document and returns formatted output bytes.
 func applyJQFilter(jsonBytes []byte, filterExpr string, compact, rawOutput bool) ([]byte, error) {
 	if filterExpr == "" {
@@ -581,8 +622,17 @@ func applyJQFilter(jsonBytes []byte, filterExpr string, compact, rawOutput bool)
 	if err != nil {
 		return nil, fmt.Errorf("invalid jq filter %q: %w", filterExpr, err)
 	}
+	dec := json.NewDecoder(bytes.NewReader(jsonBytes))
+	dec.UseNumber()
 	var input any
-	if err := json.Unmarshal(jsonBytes, &input); err != nil {
+	if err := dec.Decode(&input); err != nil {
+		return nil, fmt.Errorf("parse JSON for jq filter: %w", err)
+	}
+	if tok, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("parse JSON for jq filter: unexpected trailing token %v", tok)
+	}
+	input, err = normalizeJSONForJQ(input)
+	if err != nil {
 		return nil, fmt.Errorf("parse JSON for jq filter: %w", err)
 	}
 
