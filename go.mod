@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/itchyny/gojq v0.12.20
-	github.com/omnibuf/omnibuf-go v0.2.3
+	github.com/omnibuf/omnibuf-go v0.2.10
 	github.com/omnibuf/omnibuf-go/omnibufproto v0.2.1
 	google.golang.org/protobuf v1.36.12
 )
