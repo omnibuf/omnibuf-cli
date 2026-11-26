@@ -1,4 +1,4 @@
-name: Release omnibuf CLI Binaries
+name: Release
 
 on:
   push:
