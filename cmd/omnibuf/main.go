@@ -604,18 +604,20 @@ func loadFileDescriptorSet(path string, maxBytes int64) (*descriptorpb.FileDescr
 
 	fds := &descriptorpb.FileDescriptorSet{}
 	if isJSON {
-		if err := protojson.Unmarshal(trimmed, fds); err != nil {
-			fdp := &descriptorpb.FileDescriptorProto{}
-			if errSingle := protojson.Unmarshal(trimmed, fdp); errSingle == nil && fdp.GetName() != "" {
-				fds.File = []*descriptorpb.FileDescriptorProto{fdp}
-				return fds, nil
-			}
+		uOpts := protojson.UnmarshalOptions{DiscardUnknown: true}
+		err := uOpts.Unmarshal(trimmed, fds)
+		if err == nil && len(fds.File) > 0 {
+			return fds, nil
+		}
+		fdp := &descriptorpb.FileDescriptorProto{}
+		if errSingle := uOpts.Unmarshal(trimmed, fdp); errSingle == nil && fdp.GetName() != "" {
+			fds.File = []*descriptorpb.FileDescriptorProto{fdp}
+			return fds, nil
+		}
+		if err != nil {
 			return nil, fmt.Errorf("unmarshal FileDescriptorSet JSON from %q: %w", path, err)
 		}
-		if len(fds.File) == 0 {
-			return nil, fmt.Errorf("FileDescriptorSet JSON %q contains 0 files", path)
-		}
-		return fds, nil
+		return nil, fmt.Errorf("FileDescriptorSet JSON %q contains 0 files", path)
 	}
 
 	if err := proto.Unmarshal(raw, fds); err != nil {
@@ -625,6 +627,84 @@ func loadFileDescriptorSet(path string, maxBytes int64) (*descriptorpb.FileDescr
 		return nil, fmt.Errorf("FileDescriptorSet %q contains 0 files", path)
 	}
 	return fds, nil
+}
+
+func isWellKnownProtobufPath(path string) bool {
+	return strings.HasPrefix(path, "google/protobuf/")
+}
+
+func primaryUserFiles(fds *descriptorpb.FileDescriptorSet) map[string]bool {
+	files := fds.GetFile()
+	byName := make(map[string]*descriptorpb.FileDescriptorProto, len(files))
+	imported := make(map[string]bool, len(files))
+	for _, fp := range files {
+		name := fp.GetName()
+		byName[name] = fp
+		for _, dep := range fp.GetDependency() {
+			imported[dep] = true
+		}
+		for _, dep := range fp.GetOptionDependency() {
+			imported[dep] = true
+		}
+	}
+
+	var roots []string
+	for _, fp := range files {
+		if !imported[fp.GetName()] {
+			roots = append(roots, fp.GetName())
+		}
+	}
+	if len(roots) == 0 {
+		for _, fp := range files {
+			roots = append(roots, fp.GetName())
+		}
+	}
+
+	regularReachable := make(map[string]bool, len(files))
+	queue := append([]string(nil), roots...)
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if regularReachable[cur] {
+			continue
+		}
+		regularReachable[cur] = true
+		if fp := byName[cur]; fp != nil {
+			for _, dep := range fp.GetDependency() {
+				if !regularReachable[dep] {
+					queue = append(queue, dep)
+				}
+			}
+		}
+	}
+
+	userFiles := make(map[string]bool, len(regularReachable))
+	for name := range regularReachable {
+		if !isWellKnownProtobufPath(name) {
+			userFiles[name] = true
+		}
+	}
+	return userFiles
+}
+
+func matchMessageDescriptors(messages []protoreflect.MessageDescriptor, cleanType string) []protoreflect.MessageDescriptor {
+	var matches []protoreflect.MessageDescriptor
+	suffix := "." + cleanType
+	for _, md := range messages {
+		full := string(md.FullName())
+		if string(md.Name()) == cleanType || strings.HasSuffix(full, suffix) {
+			matches = append(matches, md)
+		}
+	}
+	return matches
+}
+
+func messageDescriptorNames(messages []protoreflect.MessageDescriptor) string {
+	names := make([]string, 0, len(messages))
+	for _, md := range messages {
+		names = append(names, string(md.FullName()))
+	}
+	return strings.Join(names, ", ")
 }
 
 func loadMessageDescriptor(schemaPath, msgType string, maxBytes int64) (protoreflect.MessageDescriptor, error) {
@@ -648,10 +728,15 @@ func loadMessageDescriptor(schemaPath, msgType string, maxBytes int64) (protoref
 		}
 	}
 
+	userFiles := primaryUserFiles(fds)
+
 	var allMessages []protoreflect.MessageDescriptor
-	var topLevelMessages []protoreflect.MessageDescriptor
-	var collectNested func(mds protoreflect.MessageDescriptors, top bool)
-	collectNested = func(mds protoreflect.MessageDescriptors, top bool) {
+	var allTopLevel []protoreflect.MessageDescriptor
+	var userMessages []protoreflect.MessageDescriptor
+	var userTopLevel []protoreflect.MessageDescriptor
+
+	var collectNested func(mds protoreflect.MessageDescriptors, top, isUser bool)
+	collectNested = func(mds protoreflect.MessageDescriptors, top, isUser bool) {
 		for i := 0; i < mds.Len(); i++ {
 			md := mds.Get(i)
 			if md.IsMapEntry() {
@@ -659,54 +744,68 @@ func loadMessageDescriptor(schemaPath, msgType string, maxBytes int64) (protoref
 			}
 			allMessages = append(allMessages, md)
 			if top {
-				topLevelMessages = append(topLevelMessages, md)
+				allTopLevel = append(allTopLevel, md)
 			}
-			collectNested(md.Messages(), false)
+			if isUser {
+				userMessages = append(userMessages, md)
+				if top {
+					userTopLevel = append(userTopLevel, md)
+				}
+			}
+			collectNested(md.Messages(), false, isUser)
 		}
 	}
-	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		collectNested(fd.Messages(), true)
-		return true
-	})
+
+	seenPaths := make(map[string]bool, len(fds.GetFile()))
+	for _, fp := range fds.GetFile() {
+		name := fp.GetName()
+		if seenPaths[name] {
+			continue
+		}
+		seenPaths[name] = true
+		fd, err := files.FindFileByPath(name)
+		if err != nil {
+			continue
+		}
+		collectNested(fd.Messages(), true, userFiles[name])
+	}
+
+	listedMessages := userMessages
+	if len(listedMessages) == 0 {
+		listedMessages = allMessages
+	}
 
 	if cleanType == "" {
-		if len(topLevelMessages) == 1 {
-			return topLevelMessages[0], nil
+		if len(userTopLevel) == 1 {
+			return userTopLevel[0], nil
 		}
-		if len(allMessages) == 1 {
-			return allMessages[0], nil
+		if len(userMessages) == 1 {
+			return userMessages[0], nil
 		}
-		names := make([]string, 0, len(allMessages))
-		for _, md := range allMessages {
-			names = append(names, string(md.FullName()))
+		if len(userMessages) == 0 {
+			if len(allTopLevel) == 1 {
+				return allTopLevel[0], nil
+			}
+			if len(allMessages) == 1 {
+				return allMessages[0], nil
+			}
 		}
-		return nil, fmt.Errorf("please specify --type (-t); available messages in %q: %s", schemaPath, strings.Join(names, ", "))
+		return nil, fmt.Errorf("please specify --type (-t); available messages in %q: %s", schemaPath, messageDescriptorNames(listedMessages))
 	}
 
-	var matches []protoreflect.MessageDescriptor
-	suffix := "." + cleanType
-	for _, md := range allMessages {
-		full := string(md.FullName())
-		if string(md.Name()) == cleanType || strings.HasSuffix(full, suffix) {
-			matches = append(matches, md)
-		}
-	}
-	if len(matches) == 1 {
+	if matches := matchMessageDescriptors(userMessages, cleanType); len(matches) == 1 {
 		return matches[0], nil
-	}
-	if len(matches) > 1 {
-		names := make([]string, 0, len(matches))
-		for _, md := range matches {
-			names = append(names, string(md.FullName()))
-		}
-		return nil, fmt.Errorf("ambiguous message type %q matches multiple messages: %s", msgType, strings.Join(names, ", "))
+	} else if len(matches) > 1 {
+		return nil, fmt.Errorf("ambiguous message type %q matches multiple messages: %s", msgType, messageDescriptorNames(matches))
 	}
 
-	names := make([]string, 0, len(allMessages))
-	for _, md := range allMessages {
-		names = append(names, string(md.FullName()))
+	if matches := matchMessageDescriptors(allMessages, cleanType); len(matches) == 1 {
+		return matches[0], nil
+	} else if len(matches) > 1 {
+		return nil, fmt.Errorf("ambiguous message type %q matches multiple messages: %s", msgType, messageDescriptorNames(matches))
 	}
-	return nil, fmt.Errorf("message type %q not found in %q (available: %s)", msgType, schemaPath, strings.Join(names, ", "))
+
+	return nil, fmt.Errorf("message type %q not found in %q (available: %s)", msgType, schemaPath, messageDescriptorNames(listedMessages))
 }
 
 func readInput(path string, stdin io.Reader) ([]byte, error) {

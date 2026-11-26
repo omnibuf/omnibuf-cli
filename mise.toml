@@ -2,3 +2,4 @@
 go = "1.27.4"
 golangci-lint = "2.15.0"
 just = "1.59.0"
+protobuf = "36.2"
