@@ -6,7 +6,11 @@ github.com/itchyny/timefmt-go v0.1.9 h1:J4j1qMqZbg5jycwT6zIKfRgZ9aqqMxqanaI6Rr9E
 github.com/itchyny/timefmt-go v0.1.9/go.mod h1:5E46Q+zj7vbTgWY8o5YkMeYb4I6GeWLFnetPy5oBrAI=
 github.com/omnibuf/omnibuf-go v0.2.11 h1:gVgGd3vvrlWRxry53hKBiooEn2oripUvqFHPVQAp99A=
 github.com/omnibuf/omnibuf-go v0.2.11/go.mod h1:wrcpM54pcS4exzDj7xo7aa/ivD2GrFzmXV63FwMETNI=
+github.com/omnibuf/omnibuf-go v0.2.13 h1:9oLcL6sBlb0HWPBmORyBeJamnt/zTinMRiQ+2Z+SVjs=
+github.com/omnibuf/omnibuf-go v0.2.13/go.mod h1:wrcpM54pcS4exzDj7xo7aa/ivD2GrFzmXV63FwMETNI=
 github.com/omnibuf/omnibuf-go/omnibufproto v0.2.11 h1:YrFdoZbUCuyZq3uPOBVKSkT21Ht8s/W+NrQstrgTfXI=
 github.com/omnibuf/omnibuf-go/omnibufproto v0.2.11/go.mod h1:PveefP5rGC9KU85BlRVPwaeEnLe6hZEjPW/Y9AehwEI=
+github.com/omnibuf/omnibuf-go/omnibufproto v0.2.13 h1:r0YuKOqAyjo1uAaeDyJk+xAjdS+b995sciF7eWGvQ+E=
+github.com/omnibuf/omnibuf-go/omnibufproto v0.2.13/go.mod h1:5IbPLNq4WzHDITz74jhQooD0PsysX5paSPu4KeyowTw=
 google.golang.org/protobuf v1.37.0-rc.1 h1:RQUh2I7V8DjoPJlj2K1BXNUKIOpK2ZdPRfG0HK766Yg=
 google.golang.org/protobuf v1.37.0-rc.1/go.mod h1:X7eSFOSeyjM8zqq7vd+xpgLluojDTuH3nwq1zr6OCKg=
